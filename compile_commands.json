@@ -1,0 +1,14 @@
+[
+{
+  "directory": "/home/jove/Code/JovialTiles/build",
+  "command": "/usr/bin/c++ -DJV_DEBUG -DJV_PHYSICS_DEBUG -DJV_RENDERER_OPENGL -DJV_TARGET_LINUX -I/home/jove/Code/JovialEngine/include -I/home/jove/Code/JovialEngine/include/extern -g -Winvalid-pch -x c++-header -include /home/jove/Code/JovialTiles/build/CMakeFiles/jovial_tiles.dir/cmake_pch.hxx -o CMakeFiles/jovial_tiles.dir/cmake_pch.hxx.gch -c /home/jove/Code/JovialTiles/build/CMakeFiles/jovial_tiles.dir/cmake_pch.hxx.cxx",
+  "file": "/home/jove/Code/JovialTiles/build/CMakeFiles/jovial_tiles.dir/cmake_pch.hxx.cxx",
+  "output": "CMakeFiles/jovial_tiles.dir/cmake_pch.hxx.gch"
+},
+{
+  "directory": "/home/jove/Code/JovialTiles/build",
+  "command": "/usr/bin/c++ -DJV_DEBUG -DJV_PHYSICS_DEBUG -DJV_RENDERER_OPENGL -DJV_TARGET_LINUX -I/home/jove/Code/JovialEngine/include -I/home/jove/Code/JovialEngine/include/extern -g -Winvalid-pch -include /home/jove/Code/JovialTiles/build/CMakeFiles/jovial_tiles.dir/cmake_pch.hxx -o CMakeFiles/jovial_tiles.dir/src/main.cpp.o -c /home/jove/Code/JovialTiles/src/main.cpp",
+  "file": "/home/jove/Code/JovialTiles/src/main.cpp",
+  "output": "CMakeFiles/jovial_tiles.dir/src/main.cpp.o"
+}
+]
