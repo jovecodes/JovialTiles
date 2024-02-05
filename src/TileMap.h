@@ -15,14 +15,17 @@ using namespace jovial;
 
 class TileMap : public Node {
 public:
-    NodeTransform2D transfrom;
+    NodeTransform2D transform;
     Texture *texture;
     std::unordered_map<glm::ivec2, glm::ivec2> tiles;
     std::unordered_map<glm::ivec2, Rect2> tile_uvs;
     Vector2 tile_size;
+    bool visable = true;
 
     TileMap(NodeTransform2D *parent_transform, Texture *texture, Vector2 tile_size)
-        : transfrom(parent_transform), texture(texture), tile_size(tile_size) {}
+        : transform(parent_transform), texture(texture), tile_size(tile_size) {
+        add_child(transform);
+    }
 
 public:
     virtual void place(glm::ivec2 coord, glm::ivec2 tile) {
@@ -50,7 +53,7 @@ public:
     }
 
     Vector2 coord_to_world(glm::ivec2 coord) const {
-        return Vector2(coord.x, coord.y) * tile_size;
+        return Vector2(coord.x, coord.y) * tile_size + transform.get_global_position();
     }
 
     bool is_tile_visible(glm::ivec2 coord) const {
@@ -113,6 +116,7 @@ public:
 
 protected:
     void update() override {
+        if (!visable) return;
         for (auto &tile: tiles) {
             if (!is_tile_visible(tile.first)) {
                 continue;
@@ -123,6 +127,7 @@ protected:
 
             rendering::TextureDrawProperties props;
             props.uv = tile_uvs[tile.second];
+            props.z_index = transform.get_global_z_index();
             rendering::draw_texture(texture, coord_to_world(tile.first), props);
         }
     }
