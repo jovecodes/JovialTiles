@@ -6,6 +6,10 @@
 #include "Jovial/Core/Maths.h"
 #include "Jovial/JovialEngine.h"
 #include "Jovial/Renderer/Sprite2DRenderer.h"
+#include "Jovial/Renderer/TextRenderer.h"
+#include "Jovial/SavingLoading/Jon.h"
+#include "Jovial/SavingLoading/JonStd.h"
+
 
 using namespace jovial;
 
@@ -71,6 +75,42 @@ public:
         }
     }
 
+    static std::unordered_map<glm::ivec2, glm::ivec2> load_jon_tiles(int i, jon::Statement &s) {
+        std::unordered_map<glm::ivec2, glm::ivec2> tiles;
+        while (s.tokens[i].kind != jon::Token::RCurley) {
+            JV_ASSERT(s.tokens[i].kind == jon::Token::LCurley);
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::LCurley);
+            i += 1;
+            int pos_x = s.tokens[i].as_int();
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::Comma);
+            i += 1;
+            int pos_y = s.tokens[i].as_int();
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::RCurley);
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::Comma);
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::LCurley);
+            i += 1;
+            int uv_x = s.tokens[i].as_int();
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::Comma);
+            i += 1;
+            int uv_y = s.tokens[i].as_int();
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::RCurley);
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::RCurley);
+            i += 1;
+            JV_ASSERT(s.tokens[i].kind == jon::Token::Comma);
+            i += 1;
+            tiles.emplace(glm::ivec2{pos_x, pos_y}, glm::ivec2{uv_x, uv_y});
+        }
+        return tiles;
+    }
+
 protected:
     void update() override {
         for (auto &tile: tiles) {
@@ -87,6 +127,44 @@ protected:
         }
     }
 };
+
+namespace jovial::jon {
+    template<>
+    struct JonObject<TileMap *> {
+        static std::string save(const std::string &name, TileMap *v) {
+            std::stringstream output;
+            output << "TileMap " << name << " = ";
+            output << "{";
+            output << "\"" << TextureBank::name_of(v->texture) << "\",";
+            output << v->tile_size.x << "," << v->tile_size.y << ",";
+            for (auto &t: v->tiles) {
+                output << "{";
+                output << "{" << t.first.x << "," << t.first.y << "},";
+                output << "{" << t.second.x << "," << t.second.y << "}";
+                output << "},";
+            }
+            output << "};";
+            return output.str();
+        }
+
+        static TileMap *load(Statement &s) {
+            JV_ASSERT(s.tokens[0].kind == Token::LCurley);
+
+            Texture *texture = TextureBank::get(std::string(s.tokens[1].value));
+            JV_ASSERT(s.tokens[2].kind == Token::Comma);
+            int size_x = s.tokens[3].as_int();
+            JV_ASSERT(s.tokens[4].kind == Token::Comma);
+            int size_y = s.tokens[5].as_int();
+            JV_ASSERT(s.tokens[6].kind == Token::Comma);
+
+            auto *tile_map = new TileMap(nullptr, texture, {size_x, size_y});
+            tile_map->load_tiles();
+            tile_map->tiles = TileMap::load_jon_tiles(7, s);
+            return tile_map;
+        }
+    };
+}// namespace jovial::jon
+
 
 class WangTileMap : public TileMap {
 public:
@@ -145,3 +223,75 @@ public:
         rewang_around(coord);
     }
 };
+
+namespace jovial::jon {
+    template<>
+    struct JonObject<WangTileMap *> {
+        static std::string save(const std::string &name, WangTileMap *v) {
+            std::stringstream output;
+            output << "WangTileMap " << name << " = ";
+            output << "{";
+
+            output << "\"" << TextureBank::name_of(v->texture) << "\",";
+            output << v->tile_size.x << "," << v->tile_size.y << ",";
+
+            output << "{";
+            for (auto &t: v->wang_tiles) {
+                output << "{" << t.x << "," << t.y << "},";
+            }
+            output << "},";
+
+            for (auto &t: v->tiles) {
+                output << "{";
+                output << "{" << t.first.x << "," << t.first.y << "},";
+                output << "{" << t.second.x << "," << t.second.y << "}";
+                output << "},";
+            }
+            output << "};";
+            return output.str();
+        }
+
+        static WangTileMap *load(Statement &s) {
+            JV_ASSERT(s.tokens[0].kind == Token::LCurley);
+
+            Texture *texture = TextureBank::get(std::string(s.tokens[1].value));
+            JV_ASSERT(s.tokens[2].kind == Token::Comma);
+            int size_x = s.tokens[3].as_int();
+            JV_ASSERT(s.tokens[4].kind == Token::Comma);
+            int size_y = s.tokens[5].as_int();
+            JV_ASSERT(s.tokens[6].kind == Token::Comma);
+
+            std::array<glm::ivec2, 16> wang_tiles = {};
+            int i = 7;
+            JV_ASSERT(s.tokens[i].kind == Token::LCurley);
+            ++i;
+
+            for (auto &wang_tile: wang_tiles) {
+                glm::ivec2 wang;
+                JV_ASSERT(s.tokens[i].kind == Token::LCurley);
+                ++i;
+                wang.x = s.tokens[i].as_int();
+                ++i;
+                JV_ASSERT(s.tokens[i].kind == Token::Comma);
+                ++i;
+                wang.y = s.tokens[i].as_int();
+                ++i;
+                JV_ASSERT(s.tokens[i].kind == Token::RCurley);
+                ++i;
+                JV_ASSERT(s.tokens[i].kind == Token::Comma);
+                ++i;
+                wang_tile = wang;
+            }
+            JV_ASSERT(s.tokens[i].kind == Token::RCurley);
+            ++i;
+            JV_ASSERT(s.tokens[i].kind == Token::Comma);
+            ++i;
+
+            auto *tile_map = new WangTileMap(wang_tiles, nullptr, texture, {size_x, size_y});
+            tile_map->load_tiles();
+
+            tile_map->tiles = TileMap::load_jon_tiles(i, s);
+            return tile_map;
+        }
+    };
+}// namespace jovial::jon
