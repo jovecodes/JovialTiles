@@ -19,6 +19,7 @@ namespace jovial {
         HashMap<Vector2i, Rect2> tile_uvs;
         Vector2 tile_size;
         bool visable = true;
+        bool using_vsize = true;
 
     public:
         TileMap() = default;
@@ -29,20 +30,27 @@ namespace jovial {
         bool load_from_jon(jon::JonNode &object);
 
     public:
-        inline virtual void place(Vector2i coord, Vector2i tile) {
+        inline void place(Vector2i coord, Vector2i tile) {
             tiles.insert(coord, tile);
         }
 
-        inline virtual void add_tile(Vector2i tile, Rect2 uv) {
+        inline void add_tile(Vector2i tile, Rect2 uv) {
             tile_uvs.insert(tile, uv);
         }
 
-        inline bool contains_uv(Vector2i coord) {
-            return tile_uvs.contains(coord);
+        inline virtual void place_auto(Vector2i coord) {
+            JV_CORE_ERROR("method: 'place_auto' not available on base TileMap class");
+        }
+        inline virtual void erase_auto(Vector2i coord) {
+            JV_CORE_ERROR("method: 'erase_auto' not available on base TileMap class");
         }
 
-        inline bool contains(Vector2i coord) {
-            return tiles.contains(coord);
+        [[nodiscard]] inline bool has_uv(Vector2i coord) const {
+            return tile_uvs.has(coord);
+        }
+
+        [[nodiscard]] inline bool has(Vector2i coord) const {
+            return tiles.has(coord);
         }
 
         inline void erase(Vector2i coord) {
@@ -54,22 +62,22 @@ namespace jovial {
         }
 
         [[nodiscard]] inline Vector2i world_to_coord(Vector2 world) const {
-            return world / tile_size;
+            return (Vector2) (world - position) / tile_size;
         }
 
         [[nodiscard]] inline Vector2 coord_to_world(Vector2i coord) const {
-            return Vector2(coord.x, coord.y) * tile_size + position;
+            return (Vector2) coord * tile_size + position;
         }
 
         [[nodiscard]] inline bool is_tile_visible(Vector2i coord) const {
             auto tpos = coord_to_world(coord);
             Rect2 tile(tpos, tpos + tile_size);
-            return tile.overlaps(Camera2D::get_visable_rect());
+            return tile.overlaps(Camera2D::get_visable_rect(using_vsize));
         }
 
         void load_tiles();
 
-        void draw(rendering::TextureDrawProps props = {});
+        void draw(TextureDrawProps props = {});
 
         static inline Array<Vector2i, 4> coords_cardinal_to(Vector2i coord) {
             return {
@@ -77,6 +85,18 @@ namespace jovial {
                     Vector2i(1, 0),
                     Vector2i(0, -1),
                     Vector2i(-1, 0),
+            };
+        }
+        static inline Array<Vector2i, 8> coords_around(Vector2i coord) {
+            return {
+                    Vector2i(0, 1),
+                    Vector2i(1, 0),
+                    Vector2i(0, -1),
+                    Vector2i(-1, 0),
+                    Vector2i(1, 1),
+                    Vector2i(1, -1),
+                    Vector2i(-1, -1),
+                    Vector2i(-1, 1),
             };
         }
     };
@@ -106,14 +126,18 @@ namespace jovial {
     public:
         int calc_wang(Vector2i coord);
 
+        inline void rewang_all() {
+            for (auto &tile: tiles) {
+                rewang(tile.key);
+            }
+        }
+
         inline void rewang(Vector2i coord) {
-            if (!contains(coord)) return;
+            if (!has(coord)) return;
 
             int bits = calc_wang(coord);
             place(coord, wang_tiles[bits]);
         }
-
-        void rewang_all();
 
         inline void rewang_around(Vector2i coord) {
             for (auto dir: coords_cardinal_to(coord))
@@ -132,7 +156,230 @@ namespace jovial {
             rewang_around(coord);
         }
 
+        inline void place_auto(Vector2i coord) override {
+            place_wang(coord);
+        }
+        inline void erase_auto(Vector2i coord) override {
+            erase_wang(coord);
+        }
+
         bool load_wang_from_jon(jon::JonNode &object);
+    };
+
+    class BlobTileMap : public TileMap {
+    public:
+        BlobTileMap(const Array<Vector2i, 256> &blob_tiles, const Texture &texture, Vector2 tile_size)
+            : blob_tiles(blob_tiles), TileMap(texture, tile_size) {}
+
+        BlobTileMap() = default;
+
+        Array<Vector2i, 256> blob_tiles;
+
+        static const int N = 0b00000001;
+        static const int E = 0b00000010;
+        static const int S = 0b00000100;
+        static const int W = 0b00001000;
+        static const int NE = 0b00010000;
+        static const int SE = 0b00100000;
+        static const int SW = 0b01000000;
+        static const int NW = 0b10000000;
+
+    public:
+        int calc_blob(Vector2i coord);
+
+        static inline Vector2i get_direction_vector(int direction) {
+            switch (direction) {
+                case N:
+                    return {0, 1};
+                case E:
+                    return {1, 0};
+                case S:
+                    return {0, -1};
+                case W:
+                    return {-1, 0};
+                case NE:
+                    return {1, 1};
+                case SE:
+                    return {1, -1};
+                case SW:
+                    return {-1, -1};
+                case NW:
+                    return {-1, 1};
+                default:
+                    JV_CORE_ERROR("Invalid direction: ", direction, " for blob tileset direction!");
+            }
+            JV_CORE_UNREACHABLE
+        }
+
+        inline void reblob_all() {
+            for (auto &tile: tiles) {
+                reblob(tile.key);
+            }
+        }
+
+        inline void reblob(Vector2i coord) {
+            if (!has(coord)) return;
+
+            int bits = calc_blob(coord);
+            place(coord, blob_tiles[bits]);
+        }
+
+
+        inline void reblob_around(Vector2i coord) {
+            for (auto dir: coords_around(coord))
+                reblob(coord + dir);
+        }
+
+        inline void erase_blob(Vector2i coord) {
+            erase(coord);
+            reblob_around(coord);
+        }
+
+        inline void place_blob(Vector2i coord) {
+            int bits = calc_blob(coord);
+            place(coord, blob_tiles[bits]);
+
+            reblob_around(coord);
+        }
+
+        inline void place_auto(Vector2i coord) override {
+            place_blob(coord);
+        }
+        inline void erase_auto(Vector2i coord) override {
+            erase_blob(coord);
+        }
+
+        bool load_blob_from_jon(jon::JonNode &object);
+    };
+
+    class RuleTileMap : public TileMap {
+    public:
+        struct Rule {
+            Vec<Pair<Vector2i, bool>> needed;
+            Vector2i output;
+        };
+
+        int effect_range = 1;
+        Vec<Rule> rules;
+
+        Vector2i parse_header(StrView &rule_file) {
+            rule_file.trim_lead();
+
+            if (rule_file[0] != '[') JV_CORE_FATAL("Expected start of rule: '[' but found: '", rule_file[0], "'")
+            rule_file.c_str += 1;
+            rule_file.trim_lead();
+
+            Vector2i uv;
+
+            StrView x = rule_file.chop_to(',');
+            uv.x = x.to_int();
+            rule_file.c_str += x.len;
+            rule_file.trim_lead();
+
+            StrView y = rule_file.chop_to(']');
+            uv.y = y.to_int();
+            rule_file.c_str += y.len;
+            rule_file.c_str += 1;// skip ']'
+            rule_file.trim_lead();
+
+            return uv;
+        }
+
+        void parse(StrView rule_file) {
+            rule_file.trim_lead();
+            if (rule_file.is_empty()) return;
+            Vector2i uv = parse_header(rule_file);
+
+            Vector2i rule_pos;
+            int rule_pos_index = rule_file.find_char('x');
+            for (int i = 0; i < rule_pos_index; ++i) {
+                if (rule_file[i] == '.' || rule_file[i] == '#' || rule_file[i] == '?') {
+                    rule_pos.x += 1;
+                }
+                if (rule_file[i] == '\n') {
+                    rule_pos.x = 0;
+                    rule_pos.y += 1;
+                }
+            }
+
+            Rule rule;
+            Vector2i pos(0, 0);
+            while (true) {
+                if (rule_file[0] == '?' || rule_file[0] == 'x') {
+                    pos.x += 1;
+                } else if (rule_file[0] == '.') {
+                    Vector2i rel = pos - rule_pos;
+                    rel.y = -rel.y;
+                    rule.needed.push_back({rel, false});
+                    pos.x += 1;
+                } else if (rule_file[0] == '#') {
+                    Vector2i rel = pos - rule_pos;
+                    rel.y = -rel.y;
+                    rule.needed.push_back({rel, true});
+                    pos.x += 1;
+                } else if (rule_file[0] == '\n') {
+                    pos.x = 0;
+                    pos.y += 1;
+                } else {
+                    break;
+                }
+                rule_file.c_str += 1;
+                while (rule_file[0] == ' ') {
+                    rule_file.c_str += 1;
+                }
+            }
+            // uv.y = -uv.y;
+            rule.output = uv;
+            print("Output: ", rule.output, ", Needs: ", rule.needed);
+            rules.push_back(rule);
+
+            rule_file.trim_lead();
+            if (rule_file.is_empty() || rule_file[0] == '\0') {
+                return;
+            }
+
+            parse(rule_file);
+        }
+
+        inline bool rule_works(const Rule &rule, Vector2i coord) {
+            for (auto &need: rule.needed) {
+                if (!has(coord + need.first)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        void rerule(Vector2i coord) {
+            for (auto &rule: rules) {
+                if (rule_works(rule, coord)) {
+                    place(coord, rule.output);
+                    return;
+                }
+            }
+            place(coord, {0, 0});
+        }
+
+        inline void place_rule(Vector2i coord) {
+            for (auto &rule: rules) {
+                if (rule_works(rule, coord)) {
+                    place(coord, rule.output);
+                    for (int i = effect_range; i > 0; --i) {
+                        for (auto dir: BlobTileMap::coords_around(coord)) {
+                            if (has(coord + dir)) {
+                                rerule(coord + dir);
+                            }
+                        }
+                    }
+                    return;
+                }
+            }
+            place(coord, {0, 0});
+        }
+
+        inline void place_auto(Vector2i coord) override {
+            place_rule(coord);
+        }
     };
 
     namespace jon {
@@ -142,6 +389,7 @@ namespace jovial {
         };
     }// namespace jon
 
+#define JOVIAL_TILEMAP_IMPLEMENTATION
 #ifdef JOVIAL_TILEMAP_IMPLEMENTATION
 
     bool TileMap::load_from_jon(jon::JonNode &object) {
@@ -191,79 +439,63 @@ namespace jovial {
         }
     }
 
-    void TileMap::draw(rendering::TextureDrawProps props) {
+    void TileMap::draw(TextureDrawProps props) {
         if (!visable) return;
 
-        for (int i = 0; i < JV_HASH_TABLE_SIZE; ++i) {
-            auto *tile = tiles.table[i];
-            while (tile != nullptr) {
-                if (is_tile_visible(tile->key)) {
-                    Rect2 uv;
-                    if (!tile_uvs.get_if_contains(tile->value, uv)) {
-                        JV_CORE_FATAL("Tilemap does not contain key: ", tile->value);
-                    }
-
-                    props.uv = tile_uvs.get(tile->value);
-                    rendering::draw_texture(texture, coord_to_world(tile->key), props);
+        for (auto &tile: tiles) {
+            if (is_tile_visible(tile.key)) {
+                Rect2 uv;
+                if (!tile_uvs.get_if_contains(tile.value, uv)) {
+                    JV_CORE_FATAL("Tilemap does not contain key: ", tile.value);
                 }
 
-                tile = tile->next;
+                props.uv = tile_uvs.get(tile.value);
+                draw_texture(texture, coord_to_world(tile.key), props);
             }
         }
     }
 
-    jovial::String ::JonObject<TileMap *>::save(Generator &generator, TileMap *v) {
-        String res;
-        res += generator.push_object();
+    namespace jon {
+        String JonObject<TileMap *>::save(Generator &generator, TileMap *v) {
+            String res;
+            res += generator.push_object();
 
-        res += generator.save_str("size", v->tile_size);
+            res += generator.save_str("size", v->tile_size);
 
-        res += generator.get_indent();
-        res += "tiles ";
-        res += generator.push_array();
-        res += "\n";
-        for (int i = 0; i < JV_HASH_TABLE_SIZE; ++i) {
-            auto *tile = v->tiles.table[i];
-            while (tile != nullptr) {
+            res += generator.get_indent();
+            res += "tiles ";
+            res += generator.push_array();
+            res += "\n";
+            for (auto &tile: v->tiles) {
                 res += generator.get_indent();
-                res += JonObject<Vector2i>::save(generator, tile->key);
+                res += JonObject<Vector2i>::save(generator, tile.key);
                 res += "\n";
                 res += generator.get_indent();
-                res += JonObject<Vector2i>::save(generator, tile->value);
+                res += JonObject<Vector2i>::save(generator, tile.value);
                 res += "\n";
-                tile = tile->next;
             }
+            res += generator.pop_array();
+            res += generator.pop_object();
+            return res;
         }
-        res += generator.pop_array();
-        res += generator.pop_object();
-        return res;
-    }
+    }// namespace jon
+
     int WangTileMap::calc_wang(Vector2i coord) {
         int bits = 0;
 
-        if (contains(coord + Vector2i(0, 1))) {
+        if (has(coord + Vector2i(0, 1))) {
             bits |= UP;
         }
-        if (contains(coord + Vector2i(1, 0))) {
+        if (has(coord + Vector2i(1, 0))) {
             bits |= RIGHT;
         }
-        if (contains(coord + Vector2i(0, -1))) {
+        if (has(coord + Vector2i(0, -1))) {
             bits |= DOWN;
         }
-        if (contains(coord + Vector2i(-1, 0))) {
+        if (has(coord + Vector2i(-1, 0))) {
             bits |= LEFT;
         }
         return bits;
-    }
-
-    void WangTileMap::rewang_all() {
-        for (int i = 0; i < JV_HASH_TABLE_SIZE; ++i) {
-            auto *tile = tiles.table[i];
-            while (tile != nullptr) {
-                rewang(tile->key);
-                tile = tile->next;
-            }
-        }
     }
 
     bool WangTileMap::load_wang_from_jon(jon::JonNode &object) {
@@ -283,33 +515,43 @@ namespace jovial {
         return true;
     }
 
-    String JonObject<WangTileMap *>::save(Generator &generator, WangTileMap *v) {
-        String res;
-        res += generator.push_object();
+    namespace jon {
+        String JonObject<WangTileMap *>::save(Generator &generator, WangTileMap *v) {
+            String res;
+            res += generator.push_object();
 
-        res += generator.save_str("size", v->tile_size);
-        res += generator.save_str("wang", v->wang_tiles);
+            res += generator.save_str("size", v->tile_size);
+            res += generator.save_str("wang", v->wang_tiles);
 
-        res += generator.get_indent();
-        res += "tiles ";
-        res += generator.push_array();
-        res += "\n";
-        for (int i = 0; i < JV_HASH_TABLE_SIZE; ++i) {
-            auto *tile = v->tiles.table[i];
-            while (tile != nullptr) {
+            res += generator.get_indent();
+            res += "tiles ";
+            res += generator.push_array();
+            res += "\n";
+            for (auto &tile: v->tiles) {
                 res += generator.get_indent();
-                res += JonObject<Vector2i>::save(generator, tile->key);
+                res += JonObject<Vector2i>::save(generator, tile.key);
                 res += "\n";
                 res += generator.get_indent();
-                res += JonObject<Vector2i>::save(generator, tile->value);
+                res += JonObject<Vector2i>::save(generator, tile.value);
                 res += "\n";
-                tile = tile->next;
+            }
+            res += generator.pop_array();
+            res += generator.pop_object();
+            return res;
+        }
+    }// namespace jon
+
+
+    int BlobTileMap::calc_blob(Vector2i coord) {
+        int bits = 0;
+        for (int direction = 1; direction <= NW; direction *= 2) {
+            if (has(coord + get_direction_vector(direction))) {
+                bits |= direction;
             }
         }
-        res += generator.pop_array();
-        res += generator.pop_object();
-        return res;
+        return bits;
     }
+
 
 #endif
 
